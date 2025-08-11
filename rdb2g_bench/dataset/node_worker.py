@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Optional, Union, List
 
 import numpy as np
+from tqdm import tqdm
 import pandas as pd
 import torch
 from torch.nn import BCEWithLogitsLoss, L1Loss
@@ -255,7 +256,7 @@ def run_gnn_node_worker(
         model.eval()
         pred_list = []
         
-        for batch in loader:
+        for batch in tqdm(loader, desc="Evaluating EntireDB2AI"):
             batch = integrate_edge_tf(batch, edge_tf_dict)
             batch = batch.to(device)
             pred = model(batch, entity_table)
@@ -416,6 +417,16 @@ def run_gnn_node_worker(
             train_time = (time.time() - train_start) / epochs
             
             model.load_state_dict(state_dict)
+
+            train_pred = test(model, loader_dict["train"], entity_table, edge_tf_dict)
+            train_metrics = task.evaluate(train_pred, task.get_table("train"))
+            print(f"Best Train metrics: {train_metrics}")
+
+            valid_start = time.time()
+            val_pred = test(model, loader_dict["val"], entity_table, edge_tf_dict)
+            val_metrics = task.evaluate(val_pred, task.get_table("val"))
+            valid_time = time.time() - valid_start
+
             #### save model
             if model_save_path:
                 torch.save(state_dict, model_save_path)
@@ -423,15 +434,12 @@ def run_gnn_node_worker(
         else:
             #### load model
             print(f"Loading model checkpoints from {model_load_path}")
+            time_start = time.time()
             model.load_state_dict(torch.load(model_load_path))
-            print("Loading done!")
+            time_end = time.time()
+            print(f"Done in {time_end - time_start:.2f} seconds.")
             model.eval()
             #### load model
-        
-        valid_start = time.time()
-        val_pred = test(model, loader_dict["val"], entity_table, edge_tf_dict)
-        val_metrics = task.evaluate(val_pred, task.get_table("val"))
-        valid_time = time.time() - valid_start
         
         test_start = time.time()
         test_pred = test(model, loader_dict["test"], entity_table, edge_tf_dict)
